@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using TaskScheduler.Exceptions;
@@ -12,13 +13,10 @@ namespace TaskScheduler
         private Thread _threadWhichMainThreadNeedToWait;
         private int _runningThreadsCount;
 
-        private Queue<Action> _queue;
-        private readonly object _queueLocker;
-        
-        private Dictionary<Guid, Action> _runningTasks;
-        private readonly object _runningTasksLocker;
-        
-        private volatile bool  _queueIsntEmpty;
+        private ConcurrentQueue<Action> _queue;
+        private ConcurrentDictionary<Guid, Action> _runningTasks;
+
+        private volatile bool  _queueIsNotEmpty;
         private volatile bool _isQueueProcessingComplete;
         private volatile bool _isEverythingComplete;
 
@@ -28,17 +26,14 @@ namespace TaskScheduler
         private int _amount;
         public int Amount
         {
-            get => Interlocked.CompareExchange(ref _amount, 0, 0);
+            get => _queue.Count;
             private set => Interlocked.Exchange(ref _amount, value);
         }
         
         public TaskScheduler()
         {
-            _runningTasksLocker = new object();
-            _queueLocker = new object();
-
-            _queue = new Queue<Action>();
-            _runningTasks = new Dictionary<Guid, Action>();
+            _queue = new ConcurrentQueue<Action>();
+            _runningTasks = new ConcurrentDictionary<Guid, Action>();
             _runningThreadsCount = 0;
         }
 
@@ -60,6 +55,11 @@ namespace TaskScheduler
                     freeSpace = WaitSomeMillisecondsAndGetFreeSpaceAfter(RefreshTimeout, maxConcurrent);
                     if (freeSpace != 0) SendMaximumPossibleCountOfTasksToRun(freeSpace);
                 }
+                //
+                // if (!_queueIsNotEmpty && AreAllTheTasksComplete())
+                // {
+                //     _isEverythingComplete = true;
+                // }
             });
             _startThread.Start();
             KillMainThreadIfEverythingComplete();
@@ -76,7 +76,7 @@ namespace TaskScheduler
                     Thread.Sleep(RefreshTimeout);
                 }
 
-                if (_queueIsntEmpty)
+                if (_queueIsNotEmpty)
                 {
                     Thread.Sleep(StopDefaultTimeout);
                     _isEverythingComplete = true;
@@ -89,23 +89,15 @@ namespace TaskScheduler
         public void Add(Action action)
         {
             if (action == null) throw new NullArgumentException(nameof(action), nameof(Add));
-            lock (_queueLocker)
-            {
-                _queue.Enqueue(action);
-            }
-            _queueIsntEmpty = true;
-            Interlocked.Increment(ref _amount);
+            _queue.Enqueue(action);
+            _queueIsNotEmpty = true;
         }
 
         public void Clear()
         {
-            lock (_queueLocker)
-            {
-                _queue.Clear();
-            }
-
+            _queue.Clear();
             Amount = 0;
-            _queueIsntEmpty = false;
+            _queueIsNotEmpty = false;
         }
         
         public void Join()
@@ -120,7 +112,7 @@ namespace TaskScheduler
                 Interlocked.Increment(ref _runningThreadsCount);
                 while (!_isEverythingComplete)
                 {
-                    if (!_queueIsntEmpty && AreAllTheTasksComplete())
+                    if (!_queueIsNotEmpty && AreAllTheTasksComplete())
                     {
                         _isEverythingComplete = true;
                     }
@@ -145,37 +137,25 @@ namespace TaskScheduler
         {
             if (Amount == 0)
             {
-                _queueIsntEmpty = false;
+                _queueIsNotEmpty = false;
                 return;
             }
 
             ThreadPool.QueueUserWorkItem(state =>
             {
                 var id = Guid.NewGuid();
-                Action action;
-                
-                lock (_queueLocker)
-                {
-                    action = _queue.Dequeue();   
-                }
+                if (Amount == 0) return;
+                _queue.TryDequeue(out var action);
+                _runningTasks[id] = action;
 
-                lock (_runningTasksLocker)
-                {
-                    _runningTasks[id] = action;
-                    Interlocked.Decrement(ref _amount);
-                }
-                
                 try
                 {
-                    action();
+                    action?.Invoke();
                 }
                 
                 finally
                 {
-                    lock (_runningTasksLocker)
-                    {
-                        _runningTasks.Remove(id);
-                    }
+                    _runningTasks.Remove(id, out _);
                 }
             });
         }
@@ -198,17 +178,14 @@ namespace TaskScheduler
         {
             if (Amount == 0)
             {
-                _queueIsntEmpty = false;
+                _queueIsNotEmpty = false;
             }
             RunTasks(Amount <= freeSpace ? Amount : freeSpace);
         }
 
         public int RunningTasksCount()
         {
-            lock (_runningTasksLocker)
-            {
-                return _runningTasks.Count;
-            }   
+            return _runningTasks.Count;
         }
     }
 }
