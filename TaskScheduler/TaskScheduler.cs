@@ -15,7 +15,7 @@ namespace TaskScheduler
         private ConcurrentQueue<Action> _queue;
         private ConcurrentDictionary<Guid, Action> _runningTasks;
 
-        private volatile bool  _queueIsNotEmpty;
+        private volatile bool  _queueIsEmpty;
         private volatile bool _isQueueProcessingComplete;
         private volatile bool _isEverythingComplete;
 
@@ -38,9 +38,12 @@ namespace TaskScheduler
             {
                 throw new NonValidValueException(nameof(maxConcurrent), nameof(Start), maxConcurrent);
             }
+            
             InitializeStartThread(maxConcurrent);
+            InitializeThreadWhichMainThreadNeedToWait();
+            
             _startThread.Start();
-            KillMainThreadIfEverythingComplete();
+            _threadWhichMainThreadNeedToWait.Start();
         }
         
         public void Stop()
@@ -53,16 +56,16 @@ namespace TaskScheduler
         {
             if (action == null) throw new NullArgumentException(nameof(action), nameof(Add));
             _queue.Enqueue(action);
-            _queueIsNotEmpty = true;
+            _queueIsEmpty = false;
         }
 
         public void Clear()
         {
             _queue.Clear();
-            _queueIsNotEmpty = false;
+            _queueIsEmpty = true;
         }
         
-        public void LetTheSchedulerFinishTheWork()
+        public void LetTheSchedulerFinishCurrentSession()
         {
             _threadWhichMainThreadNeedToWait.Join();
         }
@@ -72,7 +75,7 @@ namespace TaskScheduler
             _startThread = new Thread(() =>
             {
                 _isQueueProcessingComplete = false;
-                var freeSpace = GetFreeSpace(maxConcurrent);
+                var freeSpace = maxConcurrent - RunningTasksCount;
                 SendMaximumPossibleCountOfTasksToRun(freeSpace);
 
                 while (!_isQueueProcessingComplete)
@@ -81,7 +84,7 @@ namespace TaskScheduler
                     if (freeSpace != 0) SendMaximumPossibleCountOfTasksToRun(freeSpace);
                 }
                 
-                if (!_queueIsNotEmpty && AreAllTheTasksComplete())
+                if (_queueIsEmpty && RunningTasksCount == 0)
                 {
                     _isEverythingComplete = true;
                 }
@@ -94,17 +97,15 @@ namespace TaskScheduler
             {
                 _isQueueProcessingComplete = true;
 
-                while (!AreAllTheTasksComplete())
+                while (RunningTasksCount != 0)
                 {
                     Thread.Sleep(RefreshTimeout);
                 }
 
-                if (_queueIsNotEmpty)
-                {
-                    Thread.Sleep(StopDefaultTimeout);
-                    if(_isQueueProcessingComplete)
-                        _isEverythingComplete = true;
-                }
+                if (_queueIsEmpty) return;
+                Thread.Sleep(StopDefaultTimeout);
+                if(_isQueueProcessingComplete)
+                    _isEverythingComplete = true;
             });
         }
 
@@ -114,7 +115,7 @@ namespace TaskScheduler
             {
                 while (!_isEverythingComplete)
                 {
-                    if (!_queueIsNotEmpty && AreAllTheTasksComplete())
+                    if (_queueIsEmpty && RunningTasksCount == 0)
                     {
                         _isEverythingComplete = true;
                     }
@@ -123,30 +124,14 @@ namespace TaskScheduler
             });   
         }
 
-        private void KillMainThreadIfEverythingComplete()
-        {
-            InitializeThreadWhichMainThreadNeedToWait();
-            _threadWhichMainThreadNeedToWait.Start();
-        }
-
-        private int GetFreeSpace(int maxConcurrent)
-        {
-            return maxConcurrent - RunningTasksCount;
-        }
-
-        private bool AreAllTheTasksComplete()
-        {
-            return RunningTasksCount == 0;
-        }
-        
         private void MoveNextActionToRunningTasksFromQueue()
         {
             if (Amount == 0)
             {
-                _queueIsNotEmpty = false;
+                _queueIsEmpty = true;
                 return;
             }
-
+            
             ThreadPool.QueueUserWorkItem(state =>
             {
                 var id = Guid.NewGuid();
@@ -165,28 +150,24 @@ namespace TaskScheduler
                 }
             });
         }
-
-        private void RunTasks(int count)
-        {
-            for (var i = 0; i < count; i++)
-            {
-                MoveNextActionToRunningTasksFromQueue();
-            }
-        }
-
+        
         private int WaitSomeMillisecondsAndGetFreeSpaceAfter(int millisecondsCount, int maxConcurrent)
         {
             Thread.Sleep(millisecondsCount);
-            return GetFreeSpace(maxConcurrent);
+            return maxConcurrent - RunningTasksCount;
         }
 
         private void SendMaximumPossibleCountOfTasksToRun(int freeSpace)
         {
             if (Amount == 0)
             {
-                _queueIsNotEmpty = false;
+                _queueIsEmpty = true; return;
             }
-            RunTasks(Amount <= freeSpace ? Amount : freeSpace);
+            var count = Amount <= freeSpace ? Amount : freeSpace;
+            for (var i = 0; i < count; i++)
+            {
+                MoveNextActionToRunningTasksFromQueue();
+            }
         }
     }
 }

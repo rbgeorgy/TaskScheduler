@@ -42,7 +42,7 @@ namespace Tests
             var threadsCount = 5;
             var scheduler = GetScheduler(15, TwoSecondsSlowOperationWithId);
             scheduler.Start(threadsCount);
-            scheduler.LetTheSchedulerFinishTheWork();
+            scheduler.LetTheSchedulerFinishCurrentSession();
             Assert.AreEqual(0, scheduler.RunningTasksCount);
         }
 
@@ -54,7 +54,7 @@ namespace Tests
             var time = new Stopwatch();
             time.Start();
             scheduler.Start(threadsCount);
-            scheduler.LetTheSchedulerFinishTheWork();
+            scheduler.LetTheSchedulerFinishCurrentSession();
             time.Stop();
             Console.WriteLine(time.ElapsedMilliseconds);
             Assert.IsTrue(time.ElapsedMilliseconds <= 6000);
@@ -75,7 +75,7 @@ namespace Tests
             });
             
             Assert.AreEqual(0, scheduler.Amount);
-            scheduler.LetTheSchedulerFinishTheWork();
+            scheduler.LetTheSchedulerFinishCurrentSession();
         }
 
         [Test]
@@ -91,7 +91,7 @@ namespace Tests
                 scheduler.Add(TwoSecondsSlowOperationWithId);
             });
             Assert.AreEqual(amount + 1, scheduler.Amount);
-            scheduler.LetTheSchedulerFinishTheWork();
+            scheduler.LetTheSchedulerFinishCurrentSession();
         }
 
         [Test]
@@ -106,14 +106,14 @@ namespace Tests
             
             time.Start();
                 scheduler.Stop();
-                scheduler.LetTheSchedulerFinishTheWork();
+                scheduler.LetTheSchedulerFinishCurrentSession();
             time.Stop();
             
             Assert.IsTrue(time.ElapsedMilliseconds >= 3000 && time.ElapsedMilliseconds <= 3350);
         }
 
         [Test]
-        public void TrySetMoreThenMaxThreadCount()
+        public void TrySetMoreThenMaxThreadCountTest()
         {
             var threadsCount = 1024;
             var scheduler = GetScheduler(6514, TwoSecondsSlowOperationWithId);
@@ -144,7 +144,7 @@ namespace Tests
             scheduler.Stop();
             Thread.Sleep(2000);
             scheduler.Start(threadsCount);
-            scheduler.LetTheSchedulerFinishTheWork();
+            scheduler.LetTheSchedulerFinishCurrentSession();
         }
 
     }
