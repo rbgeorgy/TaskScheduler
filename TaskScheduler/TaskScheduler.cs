@@ -11,7 +11,6 @@ namespace TaskScheduler
         private Thread _startThread;
         private Thread _stopThread;
         private Thread _threadWhichMainThreadNeedToWait;
-        private int _runningThreadsCount;
 
         private ConcurrentQueue<Action> _queue;
         private ConcurrentDictionary<Guid, Action> _runningTasks;
@@ -22,19 +21,15 @@ namespace TaskScheduler
 
         private const int StopDefaultTimeout = 3000;
         private const int RefreshTimeout = 5;
-        
-        private int _amount;
-        public int Amount
-        {
-            get => _queue.Count;
-            private set => Interlocked.Exchange(ref _amount, value);
-        }
-        
+
+        public int Amount => _queue.Count;
+
+        public int RunningTasksCount => _runningTasks.Count;
+
         public TaskScheduler()
         {
             _queue = new ConcurrentQueue<Action>();
             _runningTasks = new ConcurrentDictionary<Guid, Action>();
-            _runningThreadsCount = 0;
         }
 
         public void Start(int maxConcurrent)
@@ -43,7 +38,37 @@ namespace TaskScheduler
             {
                 throw new NonValidValueException(nameof(maxConcurrent), nameof(Start), maxConcurrent);
             }
+            InitializeStartThread(maxConcurrent);
+            _startThread.Start();
+            KillMainThreadIfEverythingComplete();
+        }
+        
+        public void Stop()
+        {
+            InitializeStopThread();
+            _stopThread.Start();
+        }
 
+        public void Add(Action action)
+        {
+            if (action == null) throw new NullArgumentException(nameof(action), nameof(Add));
+            _queue.Enqueue(action);
+            _queueIsNotEmpty = true;
+        }
+
+        public void Clear()
+        {
+            _queue.Clear();
+            _queueIsNotEmpty = false;
+        }
+        
+        public void LetTheSchedulerFinishTheWork()
+        {
+            _threadWhichMainThreadNeedToWait.Join();
+        }
+        
+        private void InitializeStartThread(int maxConcurrent)
+        {
             _startThread = new Thread(() =>
             {
                 _isQueueProcessingComplete = false;
@@ -61,11 +86,9 @@ namespace TaskScheduler
                     _isEverythingComplete = true;
                 }
             });
-            _startThread.Start();
-            KillMainThreadIfEverythingComplete();
         }
-        
-        public void Stop()
+
+        private void InitializeStopThread()
         {
             _stopThread = new Thread(() =>
             {
@@ -79,36 +102,16 @@ namespace TaskScheduler
                 if (_queueIsNotEmpty)
                 {
                     Thread.Sleep(StopDefaultTimeout);
-                    _isEverythingComplete = true;
+                    if(_isQueueProcessingComplete)
+                        _isEverythingComplete = true;
                 }
             });
-            _stopThread.Start();
         }
 
-        public void Add(Action action)
-        {
-            if (action == null) throw new NullArgumentException(nameof(action), nameof(Add));
-            _queue.Enqueue(action);
-            _queueIsNotEmpty = true;
-        }
-
-        public void Clear()
-        {
-            _queue.Clear();
-            Amount = 0;
-            _queueIsNotEmpty = false;
-        }
-        
-        public void Join()
-        {
-            _threadWhichMainThreadNeedToWait.Join();
-        }
-
-        private void KillMainThreadIfEverythingComplete()
+        private void InitializeThreadWhichMainThreadNeedToWait()
         {
             _threadWhichMainThreadNeedToWait = new Thread(() =>
             {
-                Interlocked.Increment(ref _runningThreadsCount);
                 while (!_isEverythingComplete)
                 {
                     if (!_queueIsNotEmpty && AreAllTheTasksComplete())
@@ -117,19 +120,23 @@ namespace TaskScheduler
                     }
                     Thread.Sleep(RefreshTimeout);
                 }
-                Interlocked.Decrement(ref _runningThreadsCount);
-            });
+            });   
+        }
+
+        private void KillMainThreadIfEverythingComplete()
+        {
+            InitializeThreadWhichMainThreadNeedToWait();
             _threadWhichMainThreadNeedToWait.Start();
         }
 
         private int GetFreeSpace(int maxConcurrent)
         {
-            return maxConcurrent - RunningTasksCount();
+            return maxConcurrent - RunningTasksCount;
         }
 
         private bool AreAllTheTasksComplete()
         {
-            return RunningTasksCount() == 0;
+            return RunningTasksCount == 0;
         }
         
         private void MoveNextActionToRunningTasksFromQueue()
@@ -180,11 +187,6 @@ namespace TaskScheduler
                 _queueIsNotEmpty = false;
             }
             RunTasks(Amount <= freeSpace ? Amount : freeSpace);
-        }
-
-        public int RunningTasksCount()
-        {
-            return _runningTasks.Count;
         }
     }
 }

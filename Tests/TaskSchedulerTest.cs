@@ -42,8 +42,8 @@ namespace Tests
             var threadsCount = 5;
             var scheduler = GetScheduler(15, TwoSecondsSlowOperationWithId);
             scheduler.Start(threadsCount);
-            scheduler.Join();
-            Assert.AreEqual(0, scheduler.RunningTasksCount());
+            scheduler.LetTheSchedulerFinishTheWork();
+            Assert.AreEqual(0, scheduler.RunningTasksCount);
         }
 
         [Test]
@@ -54,7 +54,7 @@ namespace Tests
             var time = new Stopwatch();
             time.Start();
             scheduler.Start(threadsCount);
-            scheduler.Join();
+            scheduler.LetTheSchedulerFinishTheWork();
             time.Stop();
             Console.WriteLine(time.ElapsedMilliseconds);
             Assert.IsTrue(time.ElapsedMilliseconds <= 6000);
@@ -75,7 +75,7 @@ namespace Tests
             });
             
             Assert.AreEqual(0, scheduler.Amount);
-            scheduler.Join();
+            scheduler.LetTheSchedulerFinishTheWork();
         }
 
         [Test]
@@ -91,7 +91,7 @@ namespace Tests
                 scheduler.Add(TwoSecondsSlowOperationWithId);
             });
             Assert.AreEqual(amount + 1, scheduler.Amount);
-            scheduler.Join();
+            scheduler.LetTheSchedulerFinishTheWork();
         }
 
         [Test]
@@ -106,7 +106,7 @@ namespace Tests
             
             time.Start();
                 scheduler.Stop();
-                scheduler.Join();
+                scheduler.LetTheSchedulerFinishTheWork();
             time.Stop();
             
             Assert.IsTrue(time.ElapsedMilliseconds >= 3000 && time.ElapsedMilliseconds <= 3350);
@@ -133,18 +133,18 @@ namespace Tests
         }
 
         [Test]
-        public void SimulateMoreHardWorkTest()
+        public void StartAddStopSleepAndStartAgainTest()
         {
             var threadsCount = 3;
-            var scheduler = GetScheduler(14, TwoSecondsSlowOperationWithId);
+            var scheduler = GetScheduler(7, TwoSecondsSlowOperationWithId);
             scheduler.Start(threadsCount);
             scheduler.Add(FiveSecondsSlowOperation);
             scheduler.Add(FiveSecondsSlowOperation);
             scheduler.Add(FiveSecondsSlowOperation);
-            // scheduler.Stop();
-            // Thread.Sleep(3000);
-            // scheduler.Start(threadsCount);
-            scheduler.Join();
+            scheduler.Stop();
+            Thread.Sleep(2000);
+            scheduler.Start(threadsCount);
+            scheduler.LetTheSchedulerFinishTheWork();
         }
 
     }
