@@ -55,11 +55,11 @@ namespace TaskScheduler
                     freeSpace = WaitSomeMillisecondsAndGetFreeSpaceAfter(RefreshTimeout, maxConcurrent);
                     if (freeSpace != 0) SendMaximumPossibleCountOfTasksToRun(freeSpace);
                 }
-                //
-                // if (!_queueIsNotEmpty && AreAllTheTasksComplete())
-                // {
-                //     _isEverythingComplete = true;
-                // }
+                
+                if (!_queueIsNotEmpty && AreAllTheTasksComplete())
+                {
+                    _isEverythingComplete = true;
+                }
             });
             _startThread.Start();
             KillMainThreadIfEverythingComplete();
@@ -83,7 +83,6 @@ namespace TaskScheduler
                 }
             });
             _stopThread.Start();
-            KillMainThreadIfEverythingComplete();
         }
 
         public void Add(Action action)

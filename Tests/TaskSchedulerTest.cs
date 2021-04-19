@@ -132,5 +132,20 @@ namespace Tests
             }
         }
 
+        [Test]
+        public void SimulateMoreHardWorkTest()
+        {
+            var threadsCount = 3;
+            var scheduler = GetScheduler(14, TwoSecondsSlowOperationWithId);
+            scheduler.Start(threadsCount);
+            scheduler.Add(FiveSecondsSlowOperation);
+            scheduler.Add(FiveSecondsSlowOperation);
+            scheduler.Add(FiveSecondsSlowOperation);
+            // scheduler.Stop();
+            // Thread.Sleep(3000);
+            // scheduler.Start(threadsCount);
+            scheduler.Join();
+        }
+
     }
 }
