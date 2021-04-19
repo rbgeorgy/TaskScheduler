@@ -1,0 +1,8 @@
+/packages
+/.idea
+/TaskScheduler/bin
+/TaskScheduler/obj
+/Tests/bin
+/Tests/obj
+/Tests/packages.config
+TaskScheduler.sln.DotSettings.user
